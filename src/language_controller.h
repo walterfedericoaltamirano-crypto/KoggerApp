@@ -56,6 +56,6 @@ signals:
 private:
     QTranslator  translator_;
     QTranslator* startupTranslator_{nullptr};
-    QVector<QString> langs_{"en", "ru", "pl"};
+    QVector<QString> langs_{"en", "ru", "pl", "es"};
     int index_{0};
 };

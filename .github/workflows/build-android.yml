@@ -1,0 +1,104 @@
+name: KoggerApp ES (Android arm64)
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  QT_VERSION: 6.8.3
+  QT_MODULES: qt5compat qtmultimedia qtpositioning qtlocation qtshadertools
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin la clave de firma no tiene sentido compilar: se corta acá.
+      - name: Verificar secrets de firma
+        env:
+          K: ${{ secrets.SIGN_KEY_B64 }}
+          C: ${{ secrets.SIGN_CERT_B64 }}
+        run: |
+          if [ -z "$K" ] || [ -z "$C" ]; then
+            echo "::error::Faltan los secrets SIGN_KEY_B64 y SIGN_CERT_B64 (ver koggerapp_es/LEEME.md)"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Qt del host: aporta lrelease, androiddeployqt y qmlimportscanner
+      - name: Qt host
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          modules: ${{ env.QT_MODULES }}
+          set-env: false
+          dir: ${{ github.workspace }}/qt-host
+
+      - name: Qt Android arm64
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: android
+          arch: android_arm64_v8a
+          modules: ${{ env.QT_MODULES }}
+          set-env: false
+          dir: ${{ github.workspace }}/qt-android
+
+      # OpenSSL: sin esto no hay HTTPS y no bajan las teselas del mapa
+      - name: android_openssl
+        run: git clone --depth 1 https://github.com/KDAB/android_openssl.git "$ANDROID_HOME/android_openssl"
+
+      # La tablet es arm64-v8a. Compilar solo esa ABI reduce el build a la mitad.
+      - name: Solo arm64-v8a
+        run: sed -i 's/"armeabi-v7a;arm64-v8a"/"arm64-v8a"/' CMakeLists.txt
+
+      - name: Configurar
+        run: |
+          ${{ github.workspace }}/qt-android/Qt/${{ env.QT_VERSION }}/android_arm64_v8a/bin/qt-cmake \
+            -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQT_HOST_PATH=${{ github.workspace }}/qt-host/Qt/${{ env.QT_VERSION }}/gcc_64 \
+            -DANDROID_SDK_ROOT=$ANDROID_HOME
+
+      - name: Compilar
+        run: cmake --build build --parallel
+
+      - name: Empaquetar APK
+        run: cmake --build build --target apk
+
+      # Firma con la clave de GEODEX (secrets). Misma clave en cada build =>
+      # las actualizaciones se instalan encima sin desinstalar ni perder los .klf.
+      - name: Firmar
+        env:
+          K: ${{ secrets.SIGN_KEY_B64 }}
+          C: ${{ secrets.SIGN_CERT_B64 }}
+        run: |
+          set -e
+          umask 077
+          echo "$K" | base64 -d > clave.pk8
+          echo "$C" | base64 -d > certificado.pem
+          BT=$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          SRC=$(find build/android-build -name "*-unsigned.apk" | head -1)
+          [ -z "$SRC" ] && SRC=$(find build/android-build -name "*.apk" | head -1)
+          echo "apk de entrada: $SRC"
+          "$ANDROID_HOME/build-tools/$BT/zipalign" -p -f 4 "$SRC" alineado.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" sign \
+            --key clave.pk8 --cert certificado.pem \
+            --out KoggerApp-1.0.3-es-arm64.apk alineado.apk
+          rm -f clave.pk8 alineado.apk
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs KoggerApp-1.0.3-es-arm64.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KoggerApp-es
+          path: KoggerApp-1.0.3-es-arm64.apk
+          if-no-files-found: error

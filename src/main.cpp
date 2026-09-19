@@ -52,7 +52,7 @@ EchogramStateSerializer echogramStateSerializer;
 Notifications notifications;
 VideoStreamPool videoStreams;
 QTranslator translator;
-QVector<QString> availableLanguages{"en", "ru", "pl"};
+QVector<QString> availableLanguages{"en", "ru", "pl", "es"};
 // NOLINTEND(bugprone-throwing-static-initialization)
 
 #ifndef Q_OS_ANDROID
