@@ -1640,7 +1640,8 @@ ApplicationWindow {
                         options: [
                             { label: "English", value: 0 },
                             { label: "Русский", value: 1 },
-                            { label: "Polski",  value: 2 }
+                            { label: "Polski",  value: 2 },
+                            { label: "Español", value: 3 }
                         ]
                         currentValue: langController ? langController.currentIndex : 0
                         onValueSelected: function(v) { if (langController) langController.apply(v) }
